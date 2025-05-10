@@ -1,0 +1,1059 @@
+esphome:
+  name: wave001
+  friendly_name: Wave 001
+  on_boot:
+    priority: 200.0
+    then:
+      - wait_until:
+          condition:
+            lambda: 'return id(ntp).now().is_valid();'
+          timeout: 5s
+
+      - lambda: 'id(contatore_risvegli) += 1;'
+      - lambda: |-
+          ESP_LOGI("main", "▶️ Dispositivo svegliato, aggiorno il display");
+          ESP_LOGI("main", "🔁 Risveglio numero: %d", id(contatore_risvegli));
+      - delay: 800ms
+      - component.update: idADC
+      - delay: 600ms
+
+      # --- FULL CLEAN AL MATTINO ED OGNI 3 RISVEGLI ---
+      - if:
+          condition:
+            lambda: |-
+              auto now = id(ntp).now();
+              bool mattino = id(primo_risveglio_mattino) && (now.hour >= 6 && now.hour < 8);
+              bool ogni_3_risvegli = id(contatore_risvegli) >= 3;
+              return mattino || ogni_3_risvegli;
+          then:
+          #  - logger.log: "✨ Full Clean del display (mattino o ogni 3 risvegli)"
+          #  - display.page.show: pagina3
+          #  - component.update: eink_display
+          #  - delay: 1500ms
+          #  - display.page.show: pagina2
+          #  - component.update: eink_display
+          #  - delay: 500ms
+          #  - lambda: |-
+          #      if (id(primo_risveglio_mattino)) {
+          #        id(primo_risveglio_mattino) = false;
+          #      }
+          #      if (id(contatore_risvegli) >= 3) {
+          #        id(contatore_risvegli) = 0;
+          #      }
+
+          # --- FULL CLEAN AD OGNI RISVEGLIO ---
+          - logger.log: "✨ Full Clean visivo → bianco → nero → contenuto"
+
+          # Passo 1: tutto bianco
+          - display.page.show: pagina3
+          - component.update: eink_display
+          - delay: 1000ms
+
+          # Passo 2: tutto nero
+          - display.page.show: pagina4
+          - component.update: eink_display
+          - delay: 1000ms
+
+          # Passo 3: contenuto reale
+          - display.page.show: pagina1
+          - component.update: eink_display
+          - delay: 500ms
+
+          # Reset dei flag
+          - lambda: |-
+              id(contatore_risvegli) = 0;
+              id(primo_risveglio_mattino) = false;
+
+      - wait_until:
+          condition:
+            lambda: 'return id(dati_aggiornati) == true;'
+      - component.update: eink_display      
+      - logger.log: "Dati iniziali ricevuti: Aggiornamento della visualizzazione..."
+      - lambda: 'id(dati_iniziali_ricevuti) = true;'
+      - script.execute: check_sleep_time
+
+      - if:
+          condition:
+            lambda: 'return id(vai_a_dormire);'
+          then:
+            - logger.log: "🌙 È ora di dormire → Schermata bianca e deep sleep"
+            - display.page.show: pagina3
+            - component.update: eink_display
+            - delay: 800ms
+            - deep_sleep.enter: controllo_deep_sleep
+          else:
+            - script.execute: page_cycle
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: FcLNoVBys/66Non95HBSch3Xm5Ol5V7716K4rWb6L+Q=
+
+ota:
+  - platform: esphome
+    password: !secret ota_pwd
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.1.119
+    gateway: 192.168.1.254
+    subnet: 255.255.255.0
+  fast_connect: true
+
+  ap:
+    ssid: "Wave001 Fallback Hotspot"
+    password: !secret ap_pwd
+
+  power_save_mode: light  
+
+captive_portal:
+
+globals:
+  - id: dati_aggiornati
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dati_iniziali_ricevuti
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: aggiornamento_visualizzazione_registrata
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: vai_a_dormire
+    type: bool
+    restore_value: no
+    initial_value: 'false' 
+  - id: selettore_pagina #Cambio Pagina
+    type: int
+    restore_value: no
+    initial_value: '1'      
+  - id: primo_risveglio_mattino #Primo risveglio al mattino
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+# Durata visualizzazione delle pagine    
+  - id: page1_duration
+    type: int
+    restore_value: no
+    initial_value: '30' # secondi erano 60
+  - id: page2_duration
+    type: int
+    restore_value: no
+    initial_value: '50' # secondi erano 60
+  - id: page1_return_duration
+    type: int
+    restore_value: no
+    initial_value: '40' # secondi    
+# CONTATORE FULL CLEAN
+  - id: contatore_risvegli
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+
+
+button:
+  - platform: shutdown
+    name: "Spegni"
+  - platform: restart
+    name: "Riavvia"
+  - platform: template
+    name: "Aggiorna Schermo"
+    entity_category: config
+    on_press:
+      - script.execute: aggiorna_schermo
+
+script:
+  # Script per aggiornare lo schermo - Aggiorna la visualizzazione e pubblica il conteggio e l'ora degli aggiornamenti.
+  - id: aggiorna_schermo
+    then:
+      - lambda: 'id(dati_aggiornati) = false;'
+      - component.update: eink_display
+      - lambda: 'id(aggiornamento_visualizzazione_registrata) += 1;'
+      - lambda: 'id(ultimo_aggiornamento_display).publish_state(id(homeassistant_time).now().timestamp);'
+
+#  - id: check_sleep_time
+#    then:
+#      - lambda: |-
+#          auto now = id(ntp).now();
+#          if (now.is_valid()) {
+#            int total_minutes = now.hour * 60 + now.minute;
+#            if ((total_minutes >= 1350 && total_minutes <= 1439) || (total_minutes >= 0 && total_minutes < 510)) {
+#              id(go_to_sleep) = true;
+#            } else {
+#              id(go_to_sleep) = false;
+#            }
+#          } else {
+#            id(go_to_sleep) = false;
+#          }
+
+  - id: check_sleep_time
+    then:
+      - lambda: |-
+          auto now = id(ntp).now();
+          if (now.is_valid()) {
+            int total_minutes = now.hour * 60 + now.minute;
+            if ((total_minutes >= 1350 && total_minutes <= 1439) || (total_minutes >= 0 && total_minutes < 510)) {
+              // Siamo in fascia notte: calcola quanti secondi mancano alle 8:30
+              int minutes_to_morning = 510 - total_minutes;
+              if (minutes_to_morning <= 0) minutes_to_morning += 1440; // gestisce il passaggio di mezzanotte
+              int seconds_to_wakeup = minutes_to_morning * 60;
+              ESP_LOGI("main", "🌙 Deep sleep notturno fino alle 8:30 (%d secondi)", seconds_to_wakeup);
+              id(controllo_deep_sleep).set_sleep_duration(seconds_to_wakeup * 1000);
+              id(vai_a_dormire) = true;
+            } else {
+              id(vai_a_dormire) = false;
+            }
+          } else {
+            id(vai_a_dormire) = false;
+          }
+
+  - id: page_cycle
+    mode: restart
+    then:
+      # Tempi visualizzazione pagine con i secondi impostati su Globals
+      - logger.log: "Mostro Pagina 1"
+      - display.page.show: pagina1
+      - component.update: eink_display
+      - delay: !lambda 'return id(page1_duration) * 1000;'
+
+      - logger.log: "Passo a Pagina 2"
+      - display.page.show: pagina2
+      - component.update: eink_display
+      - delay: !lambda 'return id(page2_duration) * 1000;'
+
+      - logger.log: "Torno a Pagina 1"
+      - display.page.show: pagina1
+      - component.update: eink_display
+      - delay: !lambda 'return id(page1_return_duration) * 1000;'
+
+      - logger.log: "Avvio deep sleep"
+
+      # Calcola il tempo per il prossimo slot (00, 20, 40)
+      - lambda: |-
+          auto now = id(ntp).now();
+          if (now.is_valid()) {
+            int current_minutes = now.minute;
+            int current_seconds = now.second;
+            int slot = ((current_minutes / 20) + 1) * 20; // prossimo slot: 0, 20, 40, 60
+            int minutes_to_sleep = slot - current_minutes;
+            if (slot == 60) { minutes_to_sleep = 60 - current_minutes; } // gestisce il passaggio d'ora
+            int seconds_to_sleep = minutes_to_sleep * 60 - current_seconds;
+            if (seconds_to_sleep <= 0) seconds_to_sleep = 60; // fallback minimo
+            ESP_LOGI("main", "🕒 Dormo per %d secondi (fino al prossimo slot)", seconds_to_sleep);
+            id(controllo_deep_sleep).set_sleep_duration(seconds_to_sleep * 1000);
+          }
+
+      - logger.log: "Deep sleep verso prossimo slot..."
+      - deep_sleep.enter: controllo_deep_sleep
+      
+time:
+  - platform: sntp
+    id: ntp
+    timezone: Europe/Rome
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+
+  - platform: homeassistant
+    id: homeassistant_time
+
+deep_sleep:
+  id: controllo_deep_sleep
+  sleep_duration: 17min
+
+sensor:
+
+  - platform: adc
+    name: ADC
+    icon: mdi:flash
+    id: idADC
+    pin: GPIO32
+    attenuation: 12db
+    update_interval: 30s
+    accuracy_decimals: 3
+    internal: true
+    filters:
+    - sliding_window_moving_average:
+        window_size: 10
+        send_every: 2
+
+# Calcolo della tensione reale della batteria
+  - platform: copy
+    name: "Battery Voltage"
+    icon: mdi:flash
+    id: idBatteryVoltage
+    source_id: idADC
+    accuracy_decimals: 2
+    filters:
+      - multiply: 2  # mantieni se usi partitore 1:2
+
+# Percentuale della batteria (per 18650 3.7V)
+  - platform: copy
+    name: Battery Level
+    icon: mdi:battery
+    id: idBatteryLevel
+    source_id: idBatteryVoltage  
+    device_class: battery
+    unit_of_measurement: '%'
+    accuracy_decimals: 0
+    filters:
+    - calibrate_linear:
+        - 3.00 -> 0
+        - 3.30 -> 10
+        - 3.50 -> 20
+        - 3.60 -> 40
+        - 3.70 -> 60
+        - 3.80 -> 75
+        - 3.90 -> 90
+        - 4.00 -> 95
+        - 4.10 -> 98
+        - 4.20 -> 100
+    - lambda: |-
+        if (x > 100.0) return 100.0;
+        if (x < 0.0) return 0.0;
+        return x;
+
+  # Create sensors for monitoring e-PaperDisplay remotely.
+  - platform: template
+    name: "Display Last Update"
+    device_class: timestamp
+    entity_category: "diagnostic"
+    id: ultimo_aggiornamento_display
+
+  # Sensori da Accuweather
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_now
+    id: weather_temperature_now
+    internal: true
+    on_value:
+      then:
+        - lambda: 'id(dati_aggiornati) = true;' 
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: weather_humidity_now
+    attribute: weather_humidity_now
+    unit_of_measurement: "%"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: weather_pressure_now
+    attribute: weather_pressure_now
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: br_wind_force
+    attribute: br_wind_force 
+    internal: true
+        
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: br_wind_speed
+    attribute: br_wind_speed
+    unit_of_measurement: "km/h"
+    state_class: "measurement"
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_temperature_1d    
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_1d    
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_temperature_2d    
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_2d    
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_temperature_3d    
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_3d    
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_temperature_4d    
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_4d    
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_temperature_5d    
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_temperature_5d    
+    internal: true
+
+  - platform: homeassistant
+    id: livingroom_temperature
+    entity_id: sensor.epaperdisplay_data
+    attribute: livingroom_temperature
+    internal: true
+         
+  - platform: homeassistant
+    id: livingroom_humidity
+    entity_id: sensor.epaperdisplay_data
+    attribute: livingroom_humidity
+    internal: true
+
+text_sensor:
+
+  # sun/moon
+  - platform: homeassistant
+    entity_id: sun.sun
+    id: sun
+    internal: true
+
+  - platform: homeassistant
+    id: weather_condition_now
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_condition_now
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_condition_1d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_condition_1d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_day_1d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_day_1d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_condition_2d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_condition_2d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_day_2d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_day_2d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_condition_3d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_condition_3d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_day_3d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_day_3d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_condition_4d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_condition_4d
+    internal: true
+
+  - platform: homeassistant    
+    id: weather_day_4d
+    entity_id: sensor.epaperdisplay_data
+    attribute: weather_day_4d
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_event
+    attribute: calendar_family_event
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_txt_days
+    attribute: calendar_family_txt_days
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_event_2
+    attribute: calendar_family_event_2
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_txt_days_2
+    attribute: calendar_family_txt_days_2
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_event_3
+    attribute: calendar_family_event_3
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_txt_days_3
+    attribute: calendar_family_txt_days_3
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_event_4
+    attribute: calendar_family_event_4
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.epaperdisplay_data
+    id: calendar_family_txt_days_4
+    attribute: calendar_family_txt_days_4
+    internal: true
+
+# Text Sensor per seconda pagina
+  # Lunedì
+  - platform: homeassistant
+    id: evento_1_lunedi
+    entity_id: input_text.lunedi_evento_1
+  - platform: homeassistant
+    id: evento_2_lunedi
+    entity_id: input_text.lunedi_evento_2
+  - platform: homeassistant
+    id: evento_3_lunedi
+    entity_id: input_text.lunedi_evento_3
+
+  # Martedì
+  - platform: homeassistant
+    id: evento_1_martedi
+    entity_id: input_text.martedi_evento_1
+  - platform: homeassistant
+    id: evento_2_martedi
+    entity_id: input_text.martedi_evento_2
+  - platform: homeassistant
+    id: evento_3_martedi
+    entity_id: input_text.martedi_evento_3
+
+  # Mercoledì
+  - platform: homeassistant
+    id: evento_1_mercoledi
+    entity_id: input_text.mercoledi_evento_1
+  - platform: homeassistant
+    id: evento_2_mercoledi
+    entity_id: input_text.mercoledi_evento_2
+  - platform: homeassistant
+    id: evento_3_mercoledi
+    entity_id: input_text.mercoledi_evento_3
+
+  # Giovedì
+  - platform: homeassistant
+    id: evento_1_giovedi
+    entity_id: input_text.giovedi_evento_1
+  - platform: homeassistant
+    id: evento_2_giovedi
+    entity_id: input_text.giovedi_evento_2
+  - platform: homeassistant
+    id: evento_3_giovedi
+    entity_id: input_text.giovedi_evento_3
+
+  # Venerdì
+  - platform: homeassistant
+    id: evento_1_venerdi
+    entity_id: input_text.venerdi_evento_1
+  - platform: homeassistant
+    id: evento_2_venerdi
+    entity_id: input_text.venerdi_evento_2
+  - platform: homeassistant
+    id: evento_3_venerdi
+    entity_id: input_text.venerdi_evento_3
+
+  # Sabato
+  - platform: homeassistant
+    id: evento_1_sabato
+    entity_id: input_text.sabato_evento_1
+  - platform: homeassistant
+    id: evento_2_sabato
+    entity_id: input_text.sabato_evento_2
+  - platform: homeassistant
+    id: evento_3_sabato
+    entity_id: input_text.sabato_evento_3
+
+  # Domenica
+  - platform: homeassistant
+    id: evento_1_domenica
+    entity_id: input_text.domenica_evento_1
+  - platform: homeassistant
+    id: evento_2_domenica
+    entity_id: input_text.domenica_evento_2
+  - platform: homeassistant
+    id: evento_3_domenica
+    entity_id: input_text.domenica_evento_3
+
+
+font:
+# Solo per la Data
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: xtra_large_font
+    size: 80
+    glyphs:
+      [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' ', '/']
+
+# Solo per la Temperatura Esterna
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: xtra_large_fontm
+    size: 66
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9']      
+
+# Per ora non usato
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: large_font
+    size: 56
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', 'å', 'ä', 'ö', '/', '³', 'ë', 'Ì']
+
+# Intestazioni Pagina 1
+  - file: "fonts/GoogleSans-Bold.ttf"
+    id: medium_fontb
+    size: 36
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', 'å', 'ä', 'ö', '/','³','ë','ì']
+
+# Dati Casa e Meteo
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: medium_fontm
+    size: 40
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', '/', 'Ì']  
+
+# Pagina 2 Intestazione e Data
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: medium_fontme
+    size: 34
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', '/', 'Ì']     
+
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: small_font
+    size: 26
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', '/', 'Ì', 'ì']
+
+  - file: "fonts/GoogleSans-Medium.ttf"
+    id: xtra_small_font
+    size: 18
+    glyphs:
+      ['&', '@', '!', ',', '.', '"', '%', '(', ')', '+', '-', '_', ':', '°', '0',
+       '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
+       'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+       'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', 'a', 'b', 'c', 'd', 'e', 'f',
+       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+       'u', 'v', 'w', 'x', 'y', 'z', '/', '³', 'Ì', 'ì']
+
+    # https://pictogrammers.github.io/@mdi/font/5.3.45/
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_icons_small
+    size: 26
+    glyphs:
+      - "\U000F12A6" # battery-charging-high
+      - "\U000F0E17" # calendar-month
+
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_icons_medium
+    size: 36
+    glyphs:
+      - "\U000F10C2" # Temperature High
+      - "\U000F10C3" # Temperature Low
+      - "\U000F1A71" # mdi-snowflake-thermometer
+      - "\U000F050F" # mdi-thermometer
+      - "\U000F029A" # mdi-gauge
+      - "\U000F058E" # mdi-water-percent
+      - "\U000F07E4" # mdi-molecule-co2
+      - "\U000F059D" # mdi-weather-windy
+      - "\U000F04E0" # mdi-sunglasses      
+      - "\U000F0E17" # calendar-month
+  
+# Includi Material Design Icons font
+  # Grazie a https://community.home-assistant.io/t/display-materialdesign-icons-on-esphome-attached-to-screen/199790/16
+  - file: 'fonts/materialdesignicons-webfont.ttf'
+    id: font_mdi_large
+    size: 80
+    glyphs: &mdi-weather-glyphs
+      - "\U000F0590" # mdi-weather-cloudy
+      - "\U000F0F2F" # mdi-weather-cloudy-alert
+      - "\U000F0E6E" # mdi-weather-cloudy-arrow-right
+      - "\U000F0591" # mdi-weather-fog
+      - "\U000F0592" # mdi-weather-hail
+      - "\U000F0F30" # mdi-weather-hazy
+      - "\U000F0898" # mdi-weather-hurricane
+      - "\U000F0593" # mdi-weather-lightning
+      - "\U000F067E" # mdi-weather-lightning-rainy
+      - "\U000F0594" # mdi-weather-night
+      - "\U000F0F31" # mdi-weather-night-partly-cloudy
+      - "\U000F0595" # mdi-weather-partly-cloudy
+      - "\U000F0F32" # mdi-weather-partly-lightning
+      - "\U000F0F33" # mdi-weather-partly-rainy
+      - "\U000F0F34" # mdi-weather-partly-snowy
+      - "\U000F0F35" # mdi-weather-partly-snowy-rainy
+      - "\U000F0596" # mdi-weather-pouring
+      - "\U000F0597" # mdi-weather-rainy
+      - "\U000F0598" # mdi-weather-snowy
+      - "\U000F0F36" # mdi-weather-snowy-heavy
+      - "\U000F067F" # mdi-weather-snowy-rainy
+      - "\U000F0599" # mdi-weather-sunny
+      - "\U000F0F37" # mdi-weather-sunny-alert
+      - "\U000F14E4" # mdi-weather-sunny-off
+      - "\U000F059A" # mdi-weather-sunset
+      - "\U000F059B" # mdi-weather-sunset-down
+      - "\U000F059C" # mdi-weather-sunset-up
+      - "\U000F0F38" # mdi-weather-tornado
+      - "\U000F059D" # mdi-weather-windy
+      - "\U000F059E" # mdi-weather-windy-variant
+      - "\U000F06CC" # mdi delete-empty
+      - "\U000F0A72" # solar-power
+      - "\U000F051F" # timer-sand
+
+  - file: 'fonts/materialdesignicons-webfont.ttf'
+    id: font_mdi_extra_large
+    size: 190
+    glyphs: &mdi-loading-glyphs    
+      - "\U000F051F" # timer-sand  
+
+# Pins per la Waveshare ePaper ESP Board
+spi:
+  clk_pin: GPIO13
+  mosi_pin: GPIO14
+
+# Definizione colori
+# Questo disegno è bianco su nero, quindi è necessario.
+color:
+  - id: color_bg
+    red: 0%
+    green: 0%
+    blue: 0%
+    white: 0%
+  - id: color_text
+    red: 0%
+    green: 0%
+    blue: 0%
+    white: 100%
+
+# Ora visualizziamo tutto sullo schermo ePaper.
+display:
+  - platform: waveshare_epaper
+    id: eink_display
+    cs_pin: GPIO15
+    dc_pin: GPIO27
+    busy_pin:
+      number: GPIO25
+      inverted: true    
+    reset_pin: GPIO26
+    reset_duration: 2ms
+    model: 7.50in-bV3
+    update_interval: never
+    rotation: 90°
+    pages:
+      - id: pagina1
+        lambda: |-
+          auto translate_day = [](const std::string &day) -> std::string {
+            if (day == "Monday") return "Lunedì";
+            if (day == "Tuesday") return "Martedì";
+            if (day == "Wednesday") return "Mercoledì";
+            if (day == "Thursday") return "Giovedì";
+            if (day == "Friday") return "Venerdì";
+            if (day == "Saturday") return "Sabato";
+            if (day == "Sunday") return "Domenica";
+            return day;
+          };
+
+          char day_buffer[20];
+          auto time_now = id(ntp).now();
+          strftime(day_buffer, sizeof(day_buffer), "%A", localtime(&time_now.timestamp));
+          std::string day_it = translate_day(day_buffer);
+
+          #define xres 480 
+          #define yres 800
+          #define x_pad 20
+          #define y_pad 20
+          #define y_header_weather 150
+          #define y_header_forecast 360
+          #define y_header_home 570
+          #define weather_icon_x xres/4-x_pad
+          #define y_date 18
+
+          std::map<std::string, std::string> weather_icon_map {
+            {"clear", "\U000F0599"}, 
+            {"cloudy", "\U000F0590"}, 
+            {"cloudy-alert", "\U000F0F2F"},
+            {"cloudy-arrow-right", "\U000F0E6E"}, 
+            {"fog", "\U000F0591"}, 
+            {"hail", "\U000F0592"},
+            {"hazy", "\U000F0F30"}, 
+            {"hurricane", "\U000F0898"}, 
+            {"lightning", "\U000F0593"},
+            {"lightning-rainy", "\U000F067E"}, 
+            {"clear-night", "\U000F0594"}, 
+            {"night", "\U000F0594"},
+            {"night-partly-cloudy", "\U000F0F31"}, 
+            {"partlycloudy", "\U000F0595"},
+            {"partly-lightning", "\U000F0F32"}, 
+            {"partly-rainy", "\U000F0F33"},
+            {"partlycloudy-light-rain", "\U000F0F33"}, 
+            {"partly-snowy", "\U000F0F34"},
+            {"partly-snowy-rainy", "\U000F0F35"}, 
+            {"pouring", "\U000F0596"},
+            {"rainy", "\U000F0597"}, 
+            {"snowy", "\U000F0598"}, 
+            {"snowy-heavy", "\U000F0F36"},
+            {"snowy-rainy", "\U000F067F"}, 
+            {"sunny", "\U000F0599"}, 
+            {"sunny-alert", "\U000F0F37"},
+            {"sunny-off", "\U000F14E4"}, 
+            {"sunset", "\U000F059A"}, 
+            {"sunset-down", "\U000F059B"},
+            {"sunset-up", "\U000F059C"}, 
+            {"tornado", "\U000F0F38"}, 
+            {"windy", "\U000F059D"},
+            {"windy-variant", "\U000F059E"},
+          };
+
+          if (isnan(id(weather_temperature_now).state)) {
+            it.printf(240, 260, id(font_mdi_extra_large), TextAlign::TOP_CENTER, "\U000F051F");
+            it.printf(240, 500, id(small_font), TextAlign::TOP_CENTER, "Caricamento dati....");
+          } else {
+
+            // SEZIONE DATA
+            const int data_center_x = x_pad + 217;
+            const int data_top_y = y_date - 15;
+            const int rect_width = 460;
+            const int rect_height = 90;
+
+            // - Disegna il primo rettangolo (cornice esterna) -
+            it.rectangle(data_center_x - rect_width/2, data_top_y, rect_width, rect_height);
+
+            // - Disegna il secondo rettangolo (cornice interna, leggermente più piccola) -
+            const int inner_margin = 2;  // quanto spazio lasciare tra i due rettangoli
+            it.rectangle(data_center_x - (rect_width/2) + inner_margin, data_top_y + inner_margin, rect_width - 2*inner_margin, rect_height - 2*inner_margin);
+
+            // - Stampa la data al centro -
+            it.printf(data_center_x, data_top_y + rect_height/2, id(xtra_large_font), TextAlign::CENTER, "%02d/%02d/%04d",
+              id(ntp).now().day_of_month, id(ntp).now().month, id(ntp).now().year);
+
+            // SEZIONE METEO
+            it.printf(x_pad, y_header_weather, id(medium_fontb), TextAlign::BASELINE_LEFT, "METEO");
+            it.line(x_pad+170, y_header_weather-10, xres-x_pad, y_header_weather-10);
+
+            // - Batteria -
+            it.printf(xres-x_pad-50, y_header_weather-15, id(font_icons_small), TextAlign::BASELINE_RIGHT, "\U000F12A6");
+
+            // - Temperatura Esterna -
+            it.printf(xres-x_pad, y_header_weather-15, id(xtra_small_font), TextAlign::BASELINE_RIGHT, "%2.0f%%", id(idBatteryLevel).state);
+            it.printf(xres-x_pad, y_header_weather+65, id(xtra_large_fontm), TextAlign::BASELINE_RIGHT, "%2.1f°", id(weather_temperature_now).state);
+
+            // - Umidità Esterna -
+            it.printf(x_pad, y_header_weather+50, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F058E");
+            it.printf(x_pad+40, y_header_weather+50, id(medium_fontm), TextAlign::BASELINE_LEFT, "%2.0f%%", id(weather_humidity_now).state);
+
+            // - Pressione Esterna -
+            it.printf(x_pad, y_header_weather+95, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F029A");
+            it.printf(x_pad+40, y_header_weather+95, id(medium_fontm), TextAlign::BASELINE_LEFT, "%4.0f hPa", id(weather_pressure_now).state); 
+
+            // - Vento -
+            it.printf(x_pad, y_header_weather+140, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F059D");
+            it.printf(x_pad+40, y_header_weather+140, id(medium_fontm), TextAlign::BASELINE_LEFT, "(%1.0f)", id(br_wind_force).state);
+            it.printf(x_pad+120, y_header_weather+140, id(medium_fontm), TextAlign::BASELINE_LEFT, "%2.1f km/h", id(br_wind_speed).state);
+
+            // -Icona Meteo -
+            it.printf(xres-x_pad, y_header_weather+140, id(font_mdi_large), color_text, TextAlign::BASELINE_RIGHT, "%s", weather_icon_map[id(weather_condition_now).state.c_str()].c_str());
+
+            // SEZIONE PREVISIONI
+            it.printf(x_pad, y_header_forecast, id(medium_fontb), TextAlign::BASELINE_LEFT, "PREVISIONI");
+            it.line(x_pad+240, y_header_forecast-10, xres-x_pad, y_header_forecast-10);
+
+            // - 1 Giorno -
+            it.printf(80, (y_header_forecast+16), id(xtra_small_font), color_text, TextAlign::TOP_CENTER, translate_day(id(weather_day_1d).state).c_str());          
+            it.printf(80, (y_header_forecast+37), id(font_mdi_large), color_text, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(weather_condition_1d).state.c_str()].c_str());
+            it.printf(80, (y_header_forecast+118), id(small_font), color_text, TextAlign::TOP_CENTER, "%2.0f°C", id(weather_temperature_1d).state);
+
+            // - 2 Giorni -
+            it.printf(185, (y_header_forecast+16), id(xtra_small_font), color_text, TextAlign::TOP_CENTER, translate_day(id(weather_day_2d).state).c_str()); 
+            it.printf(185, (y_header_forecast+37), id(font_mdi_large), color_text, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(weather_condition_2d).state.c_str()].c_str());
+            it.printf(185, (y_header_forecast+118), id(small_font), color_text, TextAlign::TOP_CENTER, "%2.0f°C", id(weather_temperature_2d).state);
+
+            // - 3 Giorni -
+            it.printf(295, (y_header_forecast+16), id(xtra_small_font), color_text, TextAlign::TOP_CENTER, translate_day(id(weather_day_3d).state).c_str()); 
+            it.printf(295, (y_header_forecast+37), id(font_mdi_large), color_text, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(weather_condition_3d).state.c_str()].c_str());
+            it.printf(295, (y_header_forecast+118), id(small_font), color_text, TextAlign::TOP_CENTER, "%2.0f°C", id(weather_temperature_3d).state);
+
+            // - 4 Giorni -
+            it.printf(400, (y_header_forecast+16), id(xtra_small_font), color_text, TextAlign::TOP_CENTER, translate_day(id(weather_day_4d).state).c_str()); 
+            it.printf(400, (y_header_forecast+37), id(font_mdi_large), color_text, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(weather_condition_4d).state.c_str()].c_str());
+            it.printf(400, (y_header_forecast+118), id(small_font), color_text, TextAlign::TOP_CENTER, "%.0f°C", id(weather_temperature_4d).state);
+
+            // SEZIONE CASA 
+            it.printf(x_pad, y_header_home, id(medium_fontb), TextAlign::BASELINE_LEFT, "CASA");
+            it.line(x_pad+120, y_header_home-10, xres-x_pad-100, y_header_home-10);
+
+            // - Salotto -
+            it.printf(x_pad+10, y_header_home+30, id(xtra_small_font), TextAlign::BASELINE_LEFT, "Salotto");
+            it.printf(x_pad, y_header_home+70, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F050F");
+            it.printf(x_pad+40, y_header_home+70, id(medium_fontm), TextAlign::BASELINE_LEFT, "%2.1f°", id(livingroom_temperature).state); 
+            it.printf(x_pad, y_header_home+115, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F058E");
+            it.printf(x_pad+40, y_header_home+115, id(medium_fontm), TextAlign::BASELINE_LEFT, "%2.0f%%", id(livingroom_humidity).state);
+
+            // SEZIONE CALENDARIO
+            it.printf(x_pad+180, y_header_home, id(medium_fontb), TextAlign::BASELINE_LEFT, "CALENDARIO");
+            it.line(x_pad+360, y_header_home-10, xres-x_pad-20, y_header_home-10);
+
+            // - Primo evento -
+            it.printf(x_pad + 180, y_header_home + 65, id(font_icons_medium), TextAlign::BASELINE_LEFT, "\U000F0E17");
+            it.printf(x_pad + 225, y_header_home + 61, id(small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_event).state.c_str());
+            it.printf(x_pad + 238, y_header_home + 81, id(xtra_small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_txt_days).state.c_str());
+
+            // - Secondo evento -
+            it.printf(x_pad + 225, y_header_home + 110, id(xtra_small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_event_2).state.c_str());
+            it.printf(x_pad + 238, y_header_home + 130, id(xtra_small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_txt_days_2).state.c_str());
+
+            // - Terzo evento -
+            it.printf(x_pad + 225, y_header_home + 159, id(xtra_small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_event_3).state.c_str());
+            it.printf(x_pad + 238, y_header_home + 179, id(xtra_small_font), TextAlign::BASELINE_LEFT, "%s", id(calendar_family_txt_days_3).state.c_str());
+
+            // SEZIONE AGGIORNAMENTO
+            it.line(x_pad, yres-y_pad-20, xres-x_pad, yres-y_pad-20);           
+
+            it.printf((xres/2), yres-y_pad+4, id(xtra_small_font), TextAlign::BASELINE_CENTER, 
+              "Ultimo aggiornamento: %s %02d %02d %04d  %02d:%02d", 
+              day_it.c_str(), time_now.day_of_month, time_now.month, time_now.year, 
+              time_now.hour, time_now.minute);
+          }
+
+      - id: pagina2
+        lambda: |-
+          int y = 24;
+          int day_font_height = 26; // small_font
+          int event_font_height = 18; // xtra_small_font
+          int spacing = 6;
+          int block_height = 102; // 7 blocchi da ~102px = 714px + titolo
+          int day_bg_extra = 5; // quanto allargare il rettangolo nero verso il basso
+
+          // TITOLO 
+          it.printf(240, y-10, id(medium_fontme), TextAlign::TOP_CENTER, "Eventi Settimanali");
+          y += 34 + 6;
+          it.horizontal_line(0, y, 480);
+          y += 8; // spazio dopo la linea
+
+          struct Giorno {
+            const char* nome;
+            text_sensor::TextSensor* e1;
+            text_sensor::TextSensor* e2;
+          };
+
+          std::vector<Giorno> giorni = {
+            {"LUNEDÌ", id(evento_1_lunedi), id(evento_2_lunedi)},
+            {"MARTEDÌ", id(evento_1_martedi), id(evento_2_martedi)},
+            {"MERCOLEDÌ", id(evento_1_mercoledi), id(evento_2_mercoledi)},
+            {"GIOVEDÌ", id(evento_1_giovedi), id(evento_2_giovedi)},
+            {"VENERDÌ", id(evento_1_venerdi), id(evento_2_venerdi)},
+            {"SABATO", id(evento_1_sabato), id(evento_2_sabato)},
+            {"DOMENICA", id(evento_1_domenica), id(evento_2_domenica)},
+          };
+
+          int today = id(homeassistant_time).now().day_of_week;
+          int giorni_offset = today - 2;
+          if (giorni_offset < 0) giorni_offset += 7;
+
+          auto now = id(homeassistant_time).now();
+
+          for (int i = 0; i < 7; i++) {
+            int idx = (giorni_offset + i) % 7;
+            auto &g = giorni[idx];
+
+            // Data del giorno
+            ESPTime day_date = now;
+            day_date.day_of_month += i;
+
+            // Normalizza la data (gestisce cambio mese/anno)
+            while (true) {
+              int days_in_month = 31;
+              if (day_date.month == 4 || day_date.month == 6 || day_date.month == 9 || day_date.month == 11) days_in_month = 30;
+              else if (day_date.month == 2) {
+                bool leap = (day_date.year % 4 == 0 && day_date.year % 100 != 0) || (day_date.year % 400 == 0);
+                days_in_month = leap ? 29 : 28;
+              }
+              if (day_date.day_of_month <= days_in_month) break;
+              day_date.day_of_month -= days_in_month;
+              day_date.month += 1;
+              if (day_date.month > 12) {
+                day_date.month = 1;
+                day_date.year += 1;
+              }
+            }
+
+            int y0 = y;
+
+            // SOLO SFONDO NERO PER LA RIGA DEL GIORNO+DATA (allargato di 5px verso il basso)
+            it.filled_rectangle(0, y, 480, day_font_height + day_bg_extra, COLOR_ON);
+            it.printf(10, y, id(small_font), COLOR_OFF, TextAlign::TOP_LEFT, "%s %02d-%02d", g.nome, day_date.day_of_month, day_date.month);
+            y += day_font_height + spacing;
+
+            // Evento 1
+            if (g.e1->has_state() && g.e1->state.length() > 0)
+              it.printf(24, y, id(xtra_small_font), COLOR_ON, TextAlign::TOP_LEFT, g.e1->state.c_str());
+            y += event_font_height + spacing;
+
+            // Evento 2
+            if (g.e2->has_state() && g.e2->state.length() > 0)
+              it.printf(24, y, id(xtra_small_font), COLOR_ON, TextAlign::TOP_LEFT, g.e2->state.c_str());
+            y += event_font_height;
+
+            // Linea divisoria solo se non è l'ultimo giorno
+            if (i < 6) {
+              y = y0 + block_height - 2;
+              it.horizontal_line(0, y, 480, COLOR_ON); // linea nera sottile
+            }
+            y = y0 + block_height;
+          }
+
+      - id: pagina3
+        lambda: |-
+          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), COLOR_OFF); // tutto bianco
+
+      - id: pagina4
+        lambda: |-
+          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), COLOR_ON);  // tutto nero
