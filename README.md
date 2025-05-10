@@ -4,10 +4,11 @@ Visualizzazione dati su display e-paper con ESPHome
 Progetto per ESP32 e display e-ink 7.5, con gestione avanzata del deep sleep e aggiornamento display solo in determinate fasce orarie.
 
 # Caratteristiche
-Aggiornamento dati da Home Assistant via API o MQTT
-Deep sleep notturno "permanente" per evitare consumi inutili
-Clean completo del display al primo risveglio mattutino
-Ciclo di aggiornamento personalizzabile (es: ogni 20 minuti)
+
+- Aggiornamento dati da Home Assistant via API o MQTT
+- Deep sleep notturno "permanente" per evitare consumi inutili
+- Clean completo del display al primo risveglio mattutino
+- Ciclo di aggiornamento personalizzabile (es: ogni 20 minuti)
 
 # Hardware utilizzato
 Waveshare ESP32 epaper Driver Board Rev.3
