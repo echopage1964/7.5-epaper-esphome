@@ -1,4 +1,4 @@
-# 7.5-epaper-esphome
+la gestione# 7.5-epaper-esphome
 - Codice per un epaper b/n da 7.5 sotto esphome.
 - Visualizzazione dati su display e-paper con ESPHome.
 - Progetto per ESP32 e display e-ink 7.5, con gestione avanzata del deep sleep e aggiornamento display solo in determinate fasce orarie.
@@ -17,8 +17,8 @@
 - Batteria Li-Po ricaricabile da 3,7 V 3000 mAh 104050
 - Cornice Ikea - RÖDALM 13x18
 - Presa usb da pannello 2 fili
-- 2 resistenze da 200Khom
-- 1 diodo schottky 1N5817
+- 2 resistenze da 200Khom (per la gestione del pin adc)
+- 1 diodo schottky 1N5817 (per la protezione dell'esp32 - opzionale)
 
 ## File forniti
 - epaper-esphome.yaml : configurazione principale ESPHome
