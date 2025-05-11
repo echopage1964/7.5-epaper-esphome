@@ -17,6 +17,19 @@ esphome:
       - delay: 700ms
       - component.update: idADC
       - delay: 600ms
+      # Verifica la validità del sensore durata pagina1
+      - wait_until:
+          condition:
+            lambda: 'return !isnan(id(durata_pagina1_ha).state);'
+          timeout: 5s
+      - lambda: |-
+          // Se durata_pagina1_ha ha un valore valido, usa quello
+          if (id(durata_pagina1_ha).state > 0) {
+            id(pagina1_durata) = int(id(durata_pagina1_ha).state);  // Imposta la durata da HA se valida
+            ESP_LOGI("setup", "✅ Durata pagina1 presa da Home Assistant: %d sec", id(pagina1_durata));    
+          } else {
+            id(pagina1_durata) = 30;  // Fallback se non disponibile
+          }
 
       # Pulizia completa al mattino o ogni risveglio
       - if:
@@ -120,7 +133,7 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'true'
-  # Durata visualizzazione delle pagine    
+  # Backup durata visualizzazione delle pagine    
   - id: pagina1_durata
     type: int
     restore_value: no
@@ -205,6 +218,12 @@ deep_sleep:
   sleep_duration: 17min
 
 sensor:
+  # Durata Pagina1
+  - platform: homeassistant
+    id: durata_pagina1_ha
+    entity_id: input_number.durata_pagina1
+    internal: true
+
   # Sensore ADC
   - platform: adc
     name: ADC
@@ -847,6 +866,9 @@ display:
 
           // Cancella lo schermo        
           it.clear();
+
+          // Riempie tutto lo schermo di nero
+          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_nero);
 
           // Riempie tutto lo schermo di nero
           it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_nero);
