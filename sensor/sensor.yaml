@@ -1,0 +1,125 @@
+- sensor:
+  - name: "Ultimo Aggiornamento Display"
+    unique_id: ultimo_aggiornamento_display
+    state: >
+      {% set ts = states('sensor.display_last_update') | float(0) %}
+      {{ ts | timestamp_custom('%Y-%m-%d %H:%M:%S') }}
+    device_class: timestamp
+
+- trigger:
+    - trigger: time_pattern
+      hours: /12
+    - trigger: homeassistant
+      event: start
+  action:
+    - action: weather.get_forecasts
+      data:
+        type: daily
+      target:
+        entity_id: weather.livorno
+      response_variable: daily
+  sensor:
+    - name: Meteo 0 Livorno
+      unique_id: meteo_0_livorno
+      state: "{{ daily['weather.livorno'].forecast[0].temperature }}"
+      unit_of_measurement: °C
+      attributes:
+        condition: "{{ daily['weather.livorno'].forecast[0].condition }}"
+        humidity: "{{ daily['weather.livorno'].forecast[0].humidity }}"
+    - name: Meteo 1 Livorno
+      unique_id: meteo_1_livorno
+      state: "{{ daily['weather.livorno'].forecast[1].temperature }}"
+      unit_of_measurement: °C
+      attributes:
+        condition: "{{ daily['weather.livorno'].forecast[1].condition }}"
+        humidity: "{{ daily['weather.livorno'].forecast[1].humidity }}"
+    - name: Meteo 2 Livorno
+      unique_id: meteo_2_livorno
+      state: "{{ daily['weather.livorno'].forecast[2].temperature }}"
+      unit_of_measurement: °C
+      attributes:
+        condition: "{{ daily['weather.livorno'].forecast[2].condition }}"
+        humidity: "{{ daily['weather.livorno'].forecast[2].humidity }}"
+    - name: Meteo 3 Livorno
+      unique_id: meteo_3_livorno
+      state: "{{ daily['weather.livorno'].forecast[3].temperature }}"
+      unit_of_measurement: °C
+      attributes:
+        condition: "{{ daily['weather.livorno'].forecast[3].condition }}"
+        humidity: "{{ daily['weather.livorno'].forecast[3].humidity }}"
+    - name: Meteo 4 Livorno
+      unique_id: meteo_4_livorno
+      state: "{{ daily['weather.livorno'].forecast[4].temperature }}"
+      unit_of_measurement: °C
+      attributes:
+        condition: "{{ daily['weather.livorno'].forecast[4].condition }}"
+        humidity: "{{ daily['weather.livorno'].forecast[4].humidity }}"
+
+- trigger:
+  - platform: time_pattern
+    minutes: "/5"
+  sensor:
+  - name: ePaperDisplay Data
+    state: "OK"
+    attributes:
+      meteo_condizione_ora: >
+        {% set cond_now = states('weather.livorno') %}
+        {% if states('sun.sun') == 'below_horizon' %}
+            {% if cond_now == 'sunny' %} night {% elif cond_now == 'partlycloudy' %} night-partly-cloudy {% else %} {{ cond_now }} {% endif %}
+        {% else %}
+            {{ cond_now }}
+        {% endif %}
+      meteo_temperatura_ora: >
+        {{ state_attr('weather.livorno', 'temperature') }}
+      meteo_umidita_ora: >
+        {{ state_attr('weather.livorno', 'humidity') |round}}
+      meteo_pressione_ora: >
+        {{ state_attr('weather.livorno', 'pressure') |round }}
+      br_wind_force: >
+        {{ states('sensor.livorno_wind_gust') | float(default=0) | round(0) }}              
+      precipitazione: >
+        {{ states('sensor.livorno_precipitation') | float(default=0) | round(0) }}  
+      meteo_giorno_1d: >
+        {{ (now() + timedelta(days=1)).strftime('%A') }}
+      meteo_condizione_1d: >
+        {% set cond_now = state_attr('sensor.meteo_1_livorno', 'condition') %}
+        {% if states('sun.sun') == 'below_horizon' %}
+            {% if cond_now == 'sunny' %} night {% elif cond_now == 'partlycloudy' %} night-partly-cloudy {% else %} {{ cond_now }} {% endif %}
+        {% else %}
+            {{ cond_now }}
+        {% endif %}
+      meteo_temperatura_1d: >
+        {{ states('sensor.meteo_1_livorno') }}
+      meteo_giorno_2d: >
+        {{ (now() + timedelta(days=2)).strftime('%A') }}
+      meteo_condizione_2d: >
+        {% set cond_now = state_attr('sensor.meteo_2_livorno', 'condition') %}
+        {% if states('sun.sun') == 'below_horizon' %}
+            {% if cond_now == 'sunny' %} night {% elif cond_now == 'partlycloudy' %} night-partly-cloudy {% else %} {{ cond_now }} {% endif %}
+        {% else %}
+            {{ cond_now }}
+        {% endif %}
+      meteo_temperatura_2d: >
+        {{ states('sensor.meteo_2_livorno') }}
+      meteo_giorno_3d: >
+        {{ (now() + timedelta(days=3)).strftime('%A') }}
+      meteo_condizione_3d: >
+        {% set cond_now = state_attr('sensor.meteo_3_livorno', 'condition') %}
+        {% if states('sun.sun') == 'below_horizon' %}
+            {% if cond_now == 'sunny' %} night {% elif cond_now == 'partlycloudy' %} night-partly-cloudy {% else %} {{ cond_now }} {% endif %}
+        {% else %}
+            {{ cond_now }}
+        {% endif %}
+      meteo_temperatura_3d: >
+        {{ states('sensor.meteo_3_livorno') }}
+      meteo_giorno_4d: >
+        {{ (now() + timedelta(days=4)).strftime('%A') }}
+      meteo_condizione_4d: >
+        {% set cond_now = state_attr('sensor.meteo_4_livorno', 'condition') %}
+        {% if states('sun.sun') == 'below_horizon' %}
+            {% if cond_now == 'sunny' %} night {% elif cond_now == 'partlycloudy' %} night-partly-cloudy {% else %} {{ cond_now }} {% endif %}
+        {% else %}
+            {{ cond_now }}
+        {% endif %}
+      meteo_temperatura_4d: >
+        {{ states('sensor.meteo_4_livorno') }}    
