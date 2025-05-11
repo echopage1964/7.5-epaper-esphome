@@ -1,8 +1,8 @@
 # 7.5-epaper-esphome
 
-Codice per un epaper b/n da 7.5 sotto esphome
-Visualizzazione dati su display e-paper con ESPHome
-Progetto per ESP32 e display e-ink 7.5, con gestione avanzata del deep sleep e aggiornamento display solo in determinate fasce orarie.
+- Codice per un epaper b/n da 7.5 sotto esphome.
+- Visualizzazione dati su display e-paper con ESPHome.
+- Progetto per ESP32 e display e-ink 7.5, con gestione avanzata del deep sleep e aggiornamento display solo in determinate fasce orarie.
 
 ## Caratteristiche
 
