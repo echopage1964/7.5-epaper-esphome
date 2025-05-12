@@ -30,6 +30,29 @@ esphome:
           } else {
             id(pagina1_durata) = 30;  // Fallback se non disponibile
           }
+      # Verifica la validità del sensore durata sleep diurno
+      - wait_until:
+          condition:
+            lambda: 'return !isnan(id(durata_sleep_diurno_ha).state);'
+          timeout: 5s
+      - lambda: |-
+          if (id(durata_sleep_diurno_ha).state > 0) {
+            id(intervallo_sleep) = int(id(durata_sleep_diurno_ha).state);
+            ESP_LOGI("setup", "✅ Intervallo sleep preso da HA: %d minuti", id(intervallo_sleep));
+          } else {
+            id(intervallo_sleep) = 20;
+            ESP_LOGI("setup", "⚠️ Intervallo sleep non valido, fallback: %d minuti", id(intervallo_sleep));
+          }
+      # Verifica la validità degli orari di partenza e fine deep sleep notturno
+      - lambda: |-
+          if (!isnan(id(sleep_notte_inizio_hour).state) && !isnan(id(sleep_notte_inizio_minute).state)) {
+            id(sleep_notte_inizio_minuti) = int(id(sleep_notte_inizio_hour).state) * 60 + int(id(sleep_notte_inizio_minute).state);
+            ESP_LOGI("setup", "🌙 Inizio sleep notturno impostato: %d minuti", id(sleep_notte_inizio_minuti));
+          }
+          if (!isnan(id(sleep_notte_fine_hour).state) && !isnan(id(sleep_notte_fine_minute).state)) {
+            id(sleep_notte_fine_minuti) = int(id(sleep_notte_fine_hour).state) * 60 + int(id(sleep_notte_fine_minute).state);
+            ESP_LOGI("setup", "🌞 Fine sleep notturno impostato: %d minuti", id(sleep_notte_fine_minuti));
+          }
 
       # Pulizia completa al mattino o ogni risveglio
       - if:
@@ -138,6 +161,21 @@ globals:
     type: int
     restore_value: no
     initial_value: '30'
+  # Backup durata deep sleep  
+  - id: intervallo_sleep
+    type: int
+    restore_value: no
+    initial_value: '20'
+  # Backup inizio deep sleep notte
+  - id: sleep_notte_inizio_minuti
+    type: int
+    restore_value: no
+    initial_value: '1350'  # fallback: 22:30
+  # Fine Deep Sleep Notte  
+  - id: sleep_notte_fine_minuti
+    type: int
+    restore_value: no
+    initial_value: '510'   # fallback: 08:30      
   # Contatore risvegli per pulizie
   - id: contatore_risvegli
     type: int
@@ -158,19 +196,31 @@ script:
     then:
       - lambda: |-
           auto now = id(ntp).now();
-          if (now.is_valid()) {
-            int total_minutes = now.hour * 60 + now.minute;
-            if ((total_minutes >= 1350 && total_minutes <= 1439) || (total_minutes >= 0 && total_minutes < 510)) {
-              // Siamo in fascia notte: calcola quanti secondi mancano alle 8:30
-              int minutes_to_morning = 510 - total_minutes;
-              if (minutes_to_morning <= 0) minutes_to_morning += 1440; // gestisce il passaggio di mezzanotte
-              int seconds_to_wakeup = minutes_to_morning * 60;
-              ESP_LOGI("main", "🌙 Deep sleep notturno fino alle 8:30 (%d secondi)", seconds_to_wakeup);
-              id(controllo_deep_sleep).set_sleep_duration(seconds_to_wakeup * 1000);
-              id(vai_a_dormire) = true;
-            } else {
-              id(vai_a_dormire) = false;
-            }
+          if (!now.is_valid()) {
+            id(vai_a_dormire) = false;
+            return;
+          }
+          int total_minutes = now.hour * 60 + now.minute;
+          int start = id(sleep_notte_inizio_minuti);  // da globals
+          int end   = id(sleep_notte_fine_minuti);    // da globals
+
+          bool in_night;
+          if (start < end) {
+            // es. 22:00–07:00 non succede: start(1320) > end(420), gestito sotto
+            in_night = (total_minutes >= start && total_minutes < end);
+          } else {
+            // periodo che passa da un giorno al successivo (es. 22:00–07:00)
+            in_night = (total_minutes >= start || total_minutes < end);
+          }
+
+          if (in_night) {
+            int delta = end - total_minutes;
+            if (delta <= 0) delta += 24 * 60;           // wrap-around
+            int seconds_to_wakeup = delta * 60 - now.second;
+            ESP_LOGI("sleep", "🌙 Deep sleep notturno fino a %02d:%02d (in %d sec)", 
+                     end/60, end%60, seconds_to_wakeup);
+            id(controllo_deep_sleep).set_sleep_duration(seconds_to_wakeup * 1000);
+            id(vai_a_dormire) = true;
           } else {
             id(vai_a_dormire) = false;
           }
@@ -187,13 +237,19 @@ script:
       - lambda: |-
           auto now = id(ntp).now();
           if (now.is_valid()) {
+            int slot_interval = id(intervallo_sleep);  // Intervallo in minuti
             int current_minutes = now.minute;
             int current_seconds = now.second;
-            int slot = ((current_minutes / 20) + 1) * 20; // prossimo slot: 0, 20, 40
-            int minutes_to_sleep = slot - current_minutes;
-            if (slot == 60) { minutes_to_sleep = 60 - current_minutes; } // gestisce il passaggio d'ora
-            int seconds_to_sleep = minutes_to_sleep * 60 - current_seconds;
+            int minutes_since_midnight = now.hour * 60 + now.minute;
+
+            int remainder = minutes_since_midnight % slot_interval;
+            int minutes_to_next_slot = slot_interval - remainder;
+            if (minutes_to_next_slot == 0) minutes_to_next_slot = slot_interval;
+
+            int seconds_to_sleep = minutes_to_next_slot * 60 - current_seconds;
             if (seconds_to_sleep <= 0) seconds_to_sleep = 60; // fallback minimo
+
+            ESP_LOGI("sleep", "⏱️ Prossimo slot tra %d secondi (ogni %d min)", seconds_to_sleep, slot_interval);
             id(controllo_deep_sleep).set_sleep_duration(seconds_to_sleep * 1000);
           }
 
@@ -217,11 +273,44 @@ deep_sleep:
   id: controllo_deep_sleep
   sleep_duration: 17min
 
+
 sensor:
   # Durata Pagina1
   - platform: homeassistant
     id: durata_pagina1_ha
     entity_id: input_number.durata_pagina1
+    internal: true
+
+  # Durata Deep Sleep
+  - platform: homeassistant
+    id: durata_sleep_diurno_ha
+    entity_id: input_number.durata_sleep_diurno
+    internal: true  
+
+  # Ora e minuti di inizio sleep notturno
+  - platform: homeassistant
+    id: sleep_notte_inizio_hour
+    entity_id: input_datetime.inizio_sleep_notturno
+    attribute: hour
+    internal: true
+
+  - platform: homeassistant
+    id: sleep_notte_inizio_minute
+    entity_id: input_datetime.inizio_sleep_notturno
+    attribute: minute
+    internal: true
+
+  # Ora e minuti di fine sleep notturno
+  - platform: homeassistant
+    id: sleep_notte_fine_hour
+    entity_id: input_datetime.fine_sleep_notturno
+    attribute: hour
+    internal: true
+
+  - platform: homeassistant
+    id: sleep_notte_fine_minute
+    entity_id: input_datetime.fine_sleep_notturno
+    attribute: minute
     internal: true
 
   # Sensore ADC
@@ -275,6 +364,12 @@ sensor:
         if (x < 0.0) return 0.0;
         return x;
 
+  # Numero di giorni visualizzati in previsioni 
+  - platform: homeassistant
+    id: giorni_previsioni_ha
+    entity_id: input_number.giorni_previsioni
+    internal: true
+
   # Crea un sensore per la gestione dell'ultimo aggiornamento.
   - platform: template
     name: Display Ultimo Aggiornamento
@@ -310,6 +405,11 @@ sensor:
     entity_id: sensor.epaperdisplay_data    
     attribute: precipitazione
     internal: true
+    
+  - platform: homeassistant
+    id: forecast_days_ha
+    entity_id: input_number.giorni_previsioni
+    internal: true    
 
   - platform: homeassistant    
     id: meteo_temperatura_1d    
@@ -740,26 +840,45 @@ display:
             // Linea a destra
             it.line(xres / 2 + 200 / 2 + 30, y_blocco_previsioni - 10, xres - x_pad, y_blocco_previsioni - 10);
 
-            // - 1 Giorno -
-            it.printf(75, (y_blocco_previsioni+16),   id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, translate_day(id(meteo_giorno_1d).state).c_str());          
-            it.printf(75, (y_blocco_previsioni+37),   id(font_mdi_medium),  colore_nero, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(meteo_condizione_1d).state.c_str()].c_str());
-            it.printf(75, (y_blocco_previsioni+100),  id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, "%2.0f°C", id(meteo_temperatura_1d).state);
+            // ======= SEZIONE PREVISIONI DINAMICA =======
 
-            // - 2 Giorni -
-            it.printf(185, (y_blocco_previsioni+16),  id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, translate_day(id(meteo_giorno_2d).state).c_str()); 
-            it.printf(185, (y_blocco_previsioni+37),  id(font_mdi_medium),  colore_nero, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(meteo_condizione_2d).state.c_str()].c_str());
-            it.printf(185, (y_blocco_previsioni+100), id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, "%2.0f°C", id(meteo_temperatura_2d).state);
+            int num_giorni = static_cast<int>(id(giorni_previsioni_ha).state);  // 4 massimo supportato dai miei sensori
+            const int base_y = y_blocco_previsioni;
+            const int spacing_x = (xres - 2 * x_pad) / num_giorni;
 
-            // - 3 Giorni -
-            it.printf(295, (y_blocco_previsioni+16),  id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, translate_day(id(meteo_giorno_3d).state).c_str()); 
-            it.printf(295, (y_blocco_previsioni+37),  id(font_mdi_medium),  colore_nero, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(meteo_condizione_3d).state.c_str()].c_str());
-            it.printf(295, (y_blocco_previsioni+100), id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, "%2.0f°C", id(meteo_temperatura_3d).state);
+            for (int i = 0; i < num_giorni; i++) {
+              int x = x_pad + i * spacing_x;
 
-            // - 4 Giorni -
-            it.printf(405, (y_blocco_previsioni+16),  id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, translate_day(id(meteo_giorno_4d).state).c_str()); 
-            it.printf(405, (y_blocco_previsioni+37),  id(font_mdi_medium),  colore_nero, TextAlign::TOP_CENTER, "%s", weather_icon_map[id(meteo_condizione_4d).state.c_str()].c_str());
-            it.printf(405, (y_blocco_previsioni+100), id(xtra_small_font),  colore_nero, TextAlign::TOP_CENTER, "%.0f°C", id(meteo_temperatura_4d).state);
-          
+              // Giorno della settimana
+              std::string giorno;
+              if (i == 0) giorno = translate_day(id(meteo_giorno_1d).state);
+              else if (i == 1) giorno = translate_day(id(meteo_giorno_2d).state);
+              else if (i == 2) giorno = translate_day(id(meteo_giorno_3d).state);
+              else giorno = translate_day(id(meteo_giorno_4d).state);
+              it.printf(x + spacing_x/2, base_y+15, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s", giorno.c_str());
+
+              // Icona meteo
+              std::string condizione;
+              if (i == 0) condizione = id(meteo_condizione_1d).state;
+              else if (i == 1) condizione = id(meteo_condizione_2d).state;
+              else if (i == 2) condizione = id(meteo_condizione_3d).state;
+              else condizione = id(meteo_condizione_4d).state;
+
+              std::string icona = weather_icon_map[condizione];
+              it.printf(x + spacing_x/2, base_y+40, id(font_mdi_medium), colore_nero, TextAlign::TOP_CENTER, "%s", icona.c_str());
+
+              // Temperatura
+              float temperatura;
+              if (i == 0) temperatura = id(meteo_temperatura_1d).state;
+              else if (i == 1) temperatura = id(meteo_temperatura_2d).state;
+              else if (i == 2) temperatura = id(meteo_temperatura_3d).state;
+              else temperatura = id(meteo_temperatura_4d).state;
+
+              char temp_str[6];
+              snprintf(temp_str, sizeof(temp_str), "%.0f", temperatura);
+              it.printf(x + spacing_x/2, base_y+105, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s°", temp_str);
+            } 
+
             // ======= SEZIONE CALENDARIO =======
             // Scritta "CALENDARIO" centrata
             it.printf(xres / 2, y_blocco_calendario + 4, id(medium_fontb), colore_nero, TextAlign::BASELINE_CENTER, "CALENDARIO");
@@ -866,9 +985,6 @@ display:
 
           // Cancella lo schermo        
           it.clear();
-
-          // Riempie tutto lo schermo di nero
-          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_nero);
 
           // Riempie tutto lo schermo di nero
           it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_nero);
