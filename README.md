@@ -9,6 +9,7 @@ la gestione# 7.5-epaper-esphome
 - Clean completo del display al primo risveglio mattutino ed ad ogni risveglio per l'aggiornamento
 - Ciclo di aggiornamento del display personalizzabile (es: ogni 20 minuti, gestibile tramite HA)
 - Durata attività Display personalizzabile (es. 30 secondi, gestibile tramite HA)
+- Scelta durata previsioni meteo giornaliere (1-4 giorni) 
 
 ## Hardware utilizzato
 - Waveshare ESP32 epaper Driver Board Rev.3
