@@ -26,7 +26,6 @@ esphome:
           // Se durata_pagina1_ha ha un valore valido, usa quello
           if (id(durata_pagina1_ha).state > 0) {
             id(pagina1_durata) = int(id(durata_pagina1_ha).state);  // Imposta la durata da HA se valida
-            ESP_LOGI("setup", "✅ Durata pagina1 presa da Home Assistant: %d sec", id(pagina1_durata));    
           } else {
             id(pagina1_durata) = 30;  // Fallback se non disponibile
           }
@@ -38,20 +37,16 @@ esphome:
       - lambda: |-
           if (id(durata_sleep_diurno_ha).state > 0) {
             id(intervallo_sleep) = int(id(durata_sleep_diurno_ha).state);
-            ESP_LOGI("setup", "✅ Intervallo sleep preso da HA: %d minuti", id(intervallo_sleep));
           } else {
             id(intervallo_sleep) = 20;
-            ESP_LOGI("setup", "⚠️ Intervallo sleep non valido, fallback: %d minuti", id(intervallo_sleep));
           }
       # Verifica la validità degli orari di partenza e fine deep sleep notturno
       - lambda: |-
           if (!isnan(id(sleep_notte_inizio_hour).state) && !isnan(id(sleep_notte_inizio_minute).state)) {
             id(sleep_notte_inizio_minuti) = int(id(sleep_notte_inizio_hour).state) * 60 + int(id(sleep_notte_inizio_minute).state);
-            ESP_LOGI("setup", "🌙 Inizio sleep notturno impostato: %d minuti", id(sleep_notte_inizio_minuti));
           }
           if (!isnan(id(sleep_notte_fine_hour).state) && !isnan(id(sleep_notte_fine_minute).state)) {
             id(sleep_notte_fine_minuti) = int(id(sleep_notte_fine_hour).state) * 60 + int(id(sleep_notte_fine_minute).state);
-            ESP_LOGI("setup", "🌞 Fine sleep notturno impostato: %d minuti", id(sleep_notte_fine_minuti));
           }
 
       # Pulizia completa al mattino o ogni risveglio
@@ -72,6 +67,9 @@ esphome:
       - wait_until:
           condition:
             lambda: 'return id(dati_aggiornati) == true;'
+      # Forza aggiornamento RSSI Wi-Fi
+      - component.update: segnale_wifi
+      - delay: 300ms            
       # Aggiorna il display e marca i dati iniziali come ricevuti      
       - component.update: eink_display      
       - lambda: 'id(dati_iniziali_ricevuti) = true;'
@@ -364,10 +362,22 @@ sensor:
         if (x < 0.0) return 0.0;
         return x;
 
+  # Segnale WiFi
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: segnale_wifi
+    update_interval: 60s
+
   # Numero di giorni visualizzati in previsioni 
   - platform: homeassistant
     id: giorni_previsioni_ha
     entity_id: input_number.giorni_previsioni
+    internal: true
+
+  # Numero di ore visualizzate in previsioni 
+  - platform: homeassistant
+    id: ore_previsioni_ha
+    entity_id: input_number.ore_previsioni
     internal: true
 
   # Crea un sensore per la gestione dell'ultimo aggiornamento.
@@ -377,7 +387,12 @@ sensor:
     entity_category: "diagnostic"
     id: ultimo_aggiornamento_display
 
-  # Sensori da Accuweather
+  #- platform: homeassistant
+  #  id: forecast_days_ha
+  #  entity_id: input_number.giorni_previsioni
+  #  internal: true 
+
+  # Sensori Meteo
   - platform: homeassistant
     id: meteo_temperatura_ora  
     entity_id: sensor.epaperdisplay_data 
@@ -405,11 +420,6 @@ sensor:
     entity_id: sensor.epaperdisplay_data    
     attribute: precipitazione
     internal: true
-    
-  - platform: homeassistant
-    id: forecast_days_ha
-    entity_id: input_number.giorni_previsioni
-    internal: true    
 
   - platform: homeassistant    
     id: meteo_temperatura_1d    
@@ -434,8 +444,31 @@ sensor:
     entity_id: sensor.epaperdisplay_data
     attribute: meteo_temperatura_4d    
     internal: true
-    
-# SENSORI TESTUALI
+
+  - platform: homeassistant    
+    id: meteo_temperatura_1o    
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_temperatura_1o    
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_temperatura_2o    
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_temperatura_2o    
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_temperatura_3o    
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_temperatura_3o    
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_temperatura_4o    
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_temperatura_4o    
+    internal: true
+
 text_sensor:
 
   # sun/moon
@@ -444,6 +477,13 @@ text_sensor:
     id: sun
     internal: true
 
+  # Selettore Previsione Giornaliero/Orario
+  - platform: homeassistant
+    id: tipo_previsioni_ha
+    entity_id: input_select.tipo_previsioni
+    internal: true
+
+  # Sensori Meteo
   - platform: homeassistant
     id: meteo_condizione_ora
     entity_id: sensor.epaperdisplay_data
@@ -498,7 +538,55 @@ text_sensor:
     attribute: meteo_giorno_4d
     internal: true
 
-  # Text Sensor per Calendario
+  - platform: homeassistant    
+    id: meteo_condizione_1o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_condizione_1o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_orario_1o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_orario_1o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_condizione_2o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_condizione_2o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_orario_2o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_orario_2o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_condizione_3o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_condizione_3o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_orario_3o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_orario_3o
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_condizione_4o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_condizione_1d
+    internal: true
+
+  - platform: homeassistant    
+    id: meteo_orario_4o
+    entity_id: sensor.epaperdisplay_data
+    attribute: meteo_orario_4o
+    internal: true
+
+  # Sensori per Calendario
   # Lunedì
   - platform: homeassistant
     id: evento_1_lunedi
@@ -559,7 +647,7 @@ font:
 # Solo per la Data
   - file: "fonts/Din-Condensed-Bold.ttf"
     id: xtra_large_font
-    size: 110
+    size: 112
     glyphs:
       [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' ', '/']
 
@@ -609,6 +697,23 @@ font:
     glyphs:
       - "\U000F12A6" # battery-charging-high
       - "\U000F0E17" # calendar-month
+      - "\U000F007A"  # mdi-battery-10               —
+      - "\U000F007B"  # mdi-battery-20               
+      - "\U000F007C"  # mdi-battery-30           
+      - "\U000F007D"  # mdi-battery-40           
+      - "\U000F007E"  # mdi-battery-50          
+      - "\U000F007F"  # mdi-battery-60          
+      - "\U000F0080"  # mdi-battery-70               
+      - "\U000F0081"  # mdi-battery-80               
+      - "\U000F0082"  # mdi-battery-90  
+      - "\U000F0079"  # mdi-battery-100           
+      - "\U000F0169"  # mdi-battery-outline 
+      - "\U000F092F"  # mdi-wifi-off
+      - "\U000F091F"  # mdi-wifi-strength-1
+      - "\U000F0922"  # mdi-wifi-strength-2
+      - "\U000F0925"  # mdi-wifi-strength-3
+      - "\U000F0928"  # mdi-wifi-strength-4
+      - "\U000F05AA"  # mdi-wifi-strength-outline                
 
 
   - file: "fonts/materialdesignicons-webfont.ttf"
@@ -631,7 +736,7 @@ font:
   # Grazie a https://community.home-assistant.io/t/display-materialdesign-icons-on-esphome-attached-to-screen/199790/16
   - file: 'fonts/materialdesignicons-webfont.ttf'
     id: font_mdi_large
-    size: 80
+    size: 82
     glyphs: &mdi-weather-glyphs
       - "\U000F054A" # mdi-umbrella
       - "\U000F0590" # mdi-weather-cloudy
@@ -795,8 +900,8 @@ display:
             const int rect_height = 90;
 
             // - Mostra la data centrata nella parte alta -
-            it.printf(data_center_x, data_top_y + rect_height/2, id(xtra_large_font), colore_nero, TextAlign::CENTER, "%02d/%02d/%04d",
-              id(ntp).now().day_of_month, id(ntp).now().month, id(ntp).now().year);
+            it.printf(data_center_x, data_top_y + rect_height/2, id(xtra_large_font), colore_nero, TextAlign::CENTER, "%02d/%02d/%02d", 
+              id(ntp).now().day_of_month, id(ntp).now().month, id(ntp).now().year % 100);
 
             // ======= SEZIONE METEO =======
             // Titolo "METEO" e linea di separazione
@@ -808,9 +913,37 @@ display:
             // Linea a destra del testo (da 10px dopo il testo fino a margine destro)
             it.line(xres / 2 + 100 / 2 + 30, y_blocco_meteo - 10, xres - x_pad, y_blocco_meteo - 10);
 
-            // - Batteria -
-            it.printf(xres-x_pad-50, y_blocco_meteo-15, id(font_icons_small),  colore_nero, TextAlign::BASELINE_RIGHT, "\U000F12A6");
-            it.printf(xres-x_pad, y_blocco_meteo-15,    id(xtra_small_font),   colore_nero, TextAlign::BASELINE_RIGHT, "%2.0f%%", id(Batteria_Livello).state);
+            // === Segnale Wi-Fi dinamico ===
+            int wifi_rssi = id(segnale_wifi).state;  // normalmente è in dBm (es: -70)
+            const char* wifi_icon;
+
+            if (isnan(wifi_rssi) || wifi_rssi < -90)       wifi_icon = "\U000F05AA"; // wifi-off
+            else if (wifi_rssi < -80)                      wifi_icon = "\U000F091F"; // strength-1
+            else if (wifi_rssi < -70)                      wifi_icon = "\U000F0922"; // strength-2
+            else if (wifi_rssi < -60)                      wifi_icon = "\U000F0925"; // strength-3
+            else                                           wifi_icon = "\U000F0928"; // strength-4
+
+            it.printf(x_pad + 5, y_blocco_meteo - 15, id(font_icons_small), colore_nero, TextAlign::BASELINE_LEFT, "%s", wifi_icon);
+            it.printf(x_pad + 100, y_blocco_meteo - 15, id(xtra_small_font), colore_nero, TextAlign::BASELINE_RIGHT, "%d dBm", wifi_rssi);
+
+            // === Batteria dinamica ===
+            float batt = id(Batteria_Livello).state;  // Livello batteria in percentuale
+            const char* batt_icon;
+
+            // Scegli icona in base al livello
+            if (batt < 10)       batt_icon = "\U000F007A"; // battery-10
+            else if (batt < 20)  batt_icon = "\U000F007B"; // battery-20
+            else if (batt < 30)  batt_icon = "\U000F007C"; // battery-30
+            else if (batt < 40)  batt_icon = "\U000F007D"; // battery-40
+            else if (batt < 50)  batt_icon = "\U000F007E"; // battery-50
+            else if (batt < 60)  batt_icon = "\U000F007F"; // battery-60
+            else if (batt < 70)  batt_icon = "\U000F0080"; // battery-70
+            else if (batt < 80)  batt_icon = "\U000F0081"; // battery-80
+            else if (batt < 90)  batt_icon = "\U000F0082"; // battery-90
+            else                 batt_icon = "\U000F0079"; // battery-full
+
+            it.printf(xres - x_pad - 48, y_blocco_meteo - 15, id(font_icons_small), colore_nero, TextAlign::BASELINE_RIGHT, batt_icon);
+            it.printf(xres - x_pad, y_blocco_meteo - 15, id(xtra_small_font), colore_nero, TextAlign::BASELINE_RIGHT, "%2.0f%%", batt);
 
             // - Temperatura Esterna -
             it.printf(xres-x_pad, y_blocco_meteo+65,    id(xtra_large_fontm),  colore_nero, TextAlign::BASELINE_RIGHT, "%2.1f°", id(meteo_temperatura_ora).state);
@@ -830,6 +963,7 @@ display:
             // -Icona Meteo -
             it.printf(xres-x_pad-35, y_blocco_meteo+140,   id(font_mdi_large),    colore_nero, TextAlign::BASELINE_RIGHT, "%s", weather_icon_map[id(meteo_condizione_ora).state.c_str()].c_str());
 
+
             // ======= SEZIONE PREVISIONI =======
             // Scritta "PREVISIONI" centrata
             it.printf(xres / 2, y_blocco_previsioni, id(medium_fontb), colore_nero, TextAlign::BASELINE_CENTER, "PREVISIONI");
@@ -840,44 +974,84 @@ display:
             // Linea a destra
             it.line(xres / 2 + 200 / 2 + 30, y_blocco_previsioni - 10, xres - x_pad, y_blocco_previsioni - 10);
 
-            // ======= SEZIONE PREVISIONI DINAMICA =======
+            // ======= SEZIONE PREVISIONI DINAMICHE =======
+            if (tipo_previsioni_ha->state == "Giornaliere") {
+              // Mostra le previsioni giornaliere
+              int num_giorni = static_cast<int>(id(giorni_previsioni_ha).state);
+              const int base_y = y_blocco_previsioni;
+              const int spacing_x = (xres - 2 * x_pad) / num_giorni;
 
-            int num_giorni = static_cast<int>(id(giorni_previsioni_ha).state);  // 4 massimo supportato dai miei sensori
-            const int base_y = y_blocco_previsioni;
-            const int spacing_x = (xres - 2 * x_pad) / num_giorni;
+              for (int i = 0; i < num_giorni; i++) {
+                int x = x_pad + i * spacing_x;
+                std::string giorno;
 
-            for (int i = 0; i < num_giorni; i++) {
-              int x = x_pad + i * spacing_x;
+                // Giorno della settimana per le previsioni giornaliere
+                if (i == 0) giorno = translate_day(id(meteo_giorno_1d).state);
+                else if (i == 1) giorno = translate_day(id(meteo_giorno_2d).state);
+                else if (i == 2) giorno = translate_day(id(meteo_giorno_3d).state);
+                else giorno = translate_day(id(meteo_giorno_4d).state);
+          
+                it.printf(x + spacing_x / 2, base_y + 15, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s", giorno.c_str());
 
-              // Giorno della settimana
-              std::string giorno;
-              if (i == 0) giorno = translate_day(id(meteo_giorno_1d).state);
-              else if (i == 1) giorno = translate_day(id(meteo_giorno_2d).state);
-              else if (i == 2) giorno = translate_day(id(meteo_giorno_3d).state);
-              else giorno = translate_day(id(meteo_giorno_4d).state);
-              it.printf(x + spacing_x/2, base_y+15, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s", giorno.c_str());
+                // Icona meteo
+                std::string condizione;
+                if (i == 0) condizione = id(meteo_condizione_1d).state;
+                else if (i == 1) condizione = id(meteo_condizione_2d).state;
+                else if (i == 2) condizione = id(meteo_condizione_3d).state;
+                else condizione = id(meteo_condizione_4d).state;
 
-              // Icona meteo
-              std::string condizione;
-              if (i == 0) condizione = id(meteo_condizione_1d).state;
-              else if (i == 1) condizione = id(meteo_condizione_2d).state;
-              else if (i == 2) condizione = id(meteo_condizione_3d).state;
-              else condizione = id(meteo_condizione_4d).state;
+                std::string icona = weather_icon_map[condizione];
+                it.printf(x + spacing_x / 2, base_y + 40, id(font_mdi_medium), colore_nero, TextAlign::TOP_CENTER, "%s", icona.c_str());
 
-              std::string icona = weather_icon_map[condizione];
-              it.printf(x + spacing_x/2, base_y+40, id(font_mdi_medium), colore_nero, TextAlign::TOP_CENTER, "%s", icona.c_str());
+                // Temperatura
+                float temperatura;
+                if (i == 0) temperatura = id(meteo_temperatura_1d).state;
+                else if (i == 1) temperatura = id(meteo_temperatura_2d).state;
+                else if (i == 2) temperatura = id(meteo_temperatura_3d).state;
+                else temperatura = id(meteo_temperatura_4d).state;
 
-              // Temperatura
-              float temperatura;
-              if (i == 0) temperatura = id(meteo_temperatura_1d).state;
-              else if (i == 1) temperatura = id(meteo_temperatura_2d).state;
-              else if (i == 2) temperatura = id(meteo_temperatura_3d).state;
-              else temperatura = id(meteo_temperatura_4d).state;
+                char temp_str[6];
+                snprintf(temp_str, sizeof(temp_str), "%.0f", temperatura);
+                it.printf(x + spacing_x / 2, base_y + 105, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s°", temp_str);
+              }
+            } else if (tipo_previsioni_ha->state == "Orarie") {
+              // Mostra le previsioni orarie
+              int num_ore = static_cast<int>(id(ore_previsioni_ha).state);  // Ad esempio, 4 ore max supportato
+              const int base_y = y_blocco_previsioni;
+              const int spacing_x = (xres - 2 * x_pad) / num_ore;
 
-              char temp_str[6];
-              snprintf(temp_str, sizeof(temp_str), "%.0f", temperatura);
-              it.printf(x + spacing_x/2, base_y+105, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s°", temp_str);
-            } 
+              for (int i = 0; i < num_ore; i++) {
+                int x = x_pad + i * spacing_x;
+                std::string ora;
+                if (i == 0) ora = id(meteo_orario_1o).state;
+                else if (i == 1) ora = id(meteo_orario_2o).state;
+                else if (i == 2) ora = id(meteo_orario_3o).state;
+                else ora = id(meteo_orario_4o).state;
+
+                it.printf(x + spacing_x / 2, base_y + 15, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s", ora.c_str());
+
+                // Icona meteo per ogni ora
+                std::string condizione;
+                if (i == 0) condizione = id(meteo_condizione_1o).state;
+                else if (i == 1) condizione = id(meteo_condizione_2o).state;
+                else if (i == 2) condizione = id(meteo_condizione_3o).state;
+                else condizione = id(meteo_condizione_4o).state;
+
+                std::string icona = weather_icon_map[condizione];
+                it.printf(x + spacing_x / 2, base_y + 40, id(font_mdi_medium), colore_nero, TextAlign::TOP_CENTER, "%s", icona.c_str());
+
+                // Temperatura oraria
+                float temperatura;
+                if (i == 0) temperatura = id(meteo_temperatura_1o).state;
+                else if (i == 1) temperatura = id(meteo_temperatura_2o).state;
+                else if (i == 2) temperatura = id(meteo_temperatura_3o).state;
+                else temperatura = id(meteo_temperatura_4o).state;
+
+                char temp_str[6];
+                snprintf(temp_str, sizeof(temp_str), "%.0f", temperatura);
+                it.printf(x + spacing_x / 2, base_y + 105, id(xtra_small_font), colore_nero, TextAlign::TOP_CENTER, "%s°", temp_str);
+              }
+            }
 
             // ======= SEZIONE CALENDARIO =======
             // Scritta "CALENDARIO" centrata
@@ -985,6 +1159,9 @@ display:
 
           // Cancella lo schermo        
           it.clear();
+
+          // Riempie tutto lo schermo di nero
+          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_bianco);
 
           // Riempie tutto lo schermo di nero
           it.filled_rectangle(0, 0, it.get_width(), it.get_height(), colore_nero);
