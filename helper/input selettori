@@ -1,0 +1,8 @@
+input_select:
+  tipo_previsioni:
+    name: Tipo di previsioni
+    options:
+      - Giornaliero
+      - Orario
+    initial: Giornaliero
+    icon: mdi:weather-sunny
