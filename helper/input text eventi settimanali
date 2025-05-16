@@ -1,0 +1,22 @@
+input_text:
+  lunedi_eventi:
+    name: Eventi Lunedì
+    initial: ""
+  martedi_eventi:
+    name: Eventi Martedì
+    initial: ""
+  mercoledi_eventi:
+    name: Eventi Mercoledì
+    initial: ""
+  giovedi_eventi:
+    name: Eventi Giovedì
+    initial: ""
+  venerdi_eventi:
+    name: Eventi Venerdì
+    initial: ""
+  sabato_eventi:
+    name: Eventi Sabato
+    initial: ""
+  domenica_eventi:
+    name: Eventi Domenica
+    initial: ""
