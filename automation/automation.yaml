@@ -1,1 +1,16 @@
-
+alias: Aggiorna eventi ePaper ogni 6 ore
+description: Lancia lo script che aggiorna gli input_text con gli eventi settimanali
+triggers:
+  - at: "00:00:00"
+    trigger: time
+  - at: "06:00:00"
+    trigger: time
+  - at: "12:00:00"
+    trigger: time
+  - at: "18:00:00"
+    trigger: time
+conditions: []
+actions:
+  - action: script.aggiorna_eventi_epaper
+    data: {}
+mode: single
