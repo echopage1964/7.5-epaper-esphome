@@ -1,1 +1,56 @@
+alias: Aggiorna eventi epaper
+mode: single
+sequence:
+  - alias: Estrai eventi prossimi 7 giorni
+    action: calendar.get_events
+    data:
+      entity_id: calendar.casa_silvia
+      start_date_time: "{{ now().isoformat() }}"
+      end_date_time: "{{ (now() + timedelta(days=7)).isoformat() }}"
+    response_variable: eventi_raw
+  - alias: Crea e scrivi eventi giornalieri concatenati
+    variables:
+      eventi: "{{ eventi_raw['calendar.casa_silvia']['events'] }}"
+      giorni_mappa:
+        monday: lunedi
+        tuesday: martedi
+        wednesday: mercoledi
+        thursday: giovedi
+        friday: venerdi
+        saturday: sabato
+        sunday: domenica
+      eventi_giornalieri: |
+        {% set giorni = namespace(data={
+          'lunedi': [], 'martedi': [], 'mercoledi': [], 'giovedi': [],
+          'venerdi': [], 'sabato': [], 'domenica': []
+        }) %} {% set oggi = now().date() %} {% for e in eventi %}
+          {% set raw_start = e.start %}
+          {% set dt = as_datetime(raw_start) %}
+          {% set delta = (dt.date() - oggi).days %}
+          {% if 0 <= delta <= 6 %}
+            {% set giorno_en = dt.strftime('%A') | lower %}
+            {% set giorno = giorni_mappa[giorno_en] %}
+            {% set orario = 'All-day' if 'T' not in raw_start else dt.strftime('%H:%M') %}
+            {% set evento = orario ~ ' ' ~ e.summary %}
+            {% set giorni.data = giorni.data | combine({ giorno: giorni.data[giorno] + [evento] }) %}
+          {% endif %}
+        {% endfor %} {{ giorni.data }}
+  - alias: Scrivi eventi unificati negli input_text
+    repeat:
+      for_each:
+        - lunedi
+        - martedi
+        - mercoledi
+        - giovedi
+        - venerdi
+        - sabato
+        - domenica
+      sequence:
+        - variables:
+            eventi_lista: "{{ eventi_giornalieri[repeat.item] }}"
+            eventi_testo: "{{ eventi_lista | join(' • ') }}"
+        - data:
+            entity_id: input_text.{{ repeat.item }}_eventi
+            value: "{{ eventi_testo }}"
+          action: input_text.set_value
 
