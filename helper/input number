@@ -1,1 +1,29 @@
-input_number.ore_previsioni
+input_number:
+  giorni_previsioni:
+    name: Giorni Previsioni
+    initial: 1
+    min: 1
+    max: 4
+    step: 1
+    unit_of_measurement: 'giorni'
+  ore_previsioni:
+    name: Ore Previsioni
+    initial: 1
+    min: 1
+    max: 4
+    step: 1
+    unit_of_measurement: 'ore'
+  durata_pagina1:
+    name: Durata Pagina 1
+    initial: 20
+    min: 20
+    max: 180
+    step: 5
+    unit_of_measurement: 'secondi'
+  durata_deep_diurno:
+    name: Durata Deep Diurno
+    initial: 20
+    min: 10
+    max: 60
+    step: 5
+    unit_of_measurement: 'minuti'
