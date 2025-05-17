@@ -11,6 +11,7 @@
 - Durata Esp32 attivo personalizzabile (10-180 secondi, gestibile tramite HA)
 - Scelta numero previsioni meteo giornaliere (1-4 giorni, gestibile tramite HA)
 - Scelta numero previsioni meteo orarie (1-4 ore, gestibile tramite HA)
+- Visualizzazione modificabile tramite input select/input number sotto Home Assistant
 
 ## Hardware utilizzato
 - Waveshare ESP32 epaper Driver Board Rev.3
