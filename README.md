@@ -46,9 +46,10 @@ Il dispositivo:
 ## Immagini
 Ecco alcune immagini del progetto:
 
-![Immagine 1](images/1.jpg)
-
-![Immagine 2](images/2.jpg)
+<p float="left">
+  <img src="images/1.jpg" width="400" alt="Immagine 1" />
+  <img src="images/2.jpg" width="400" alt="Immagine 2" />
+</p>
 
 ## Licenza
 MIT (vedi file LICENSE)
