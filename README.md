@@ -29,7 +29,7 @@
 - automazione sotto Home Assitant: per avviare lo script ad ogni mezzanotte 
 - input_text input_date sotto Home assistant: per la gestione degli eventi del calendario
 - input_datetime sotto Home Assistant: per la gestione dei tempi Deep Sleep
-- 
+
 ## Come usare questo progetto
 1. Carica il file YAML su ESPHome.
 2. Personalizza le impostazioni (pinnatura, WiFi, sensori, nomi delle entità).
@@ -43,10 +43,18 @@ Il dispositivo:
 - Si risveglia al mattino e fa un clean del display
 - Durante il giorno si aggiorna ogni 20 minuti (configurabile)
 
+## Immagini
+Ecco alcune immagini del progetto:
+
+![Immagine 1](images/1.jpg)
+
+![Immagine 2](images/2.jpg)
+
 ## Licenza
 MIT (vedi file LICENSE)
 
 ## Credits
-Creato da echopage1964
-Ispirato dalla community ESPHome & Home Assitant. Un sentito grazie a Madelena, Sloma, Debruina e tutti gli altri utenti della community per il contributo, il codice originale e i vari fork da cui sono partito!
+Creato da echopage1964  
+Ispirato dalla community ESPHome & Home Assitant. Un sentito grazie a Madelena, Sloma, Debruina e tutti gli altri utenti della community per il contributo, il codice originale e i vari fork da cui sono partito!  
 Se mi fossi dimenticato di qualcuno, mi scuso per la dimenticanza non voluta!
+
