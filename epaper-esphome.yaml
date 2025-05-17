@@ -99,27 +99,27 @@ logger:
 # Configurazione API per Home Assistant
 api:
   encryption:
-    key: FcLNoVBys/66Non95HBSch3Xm5Ol5V7716K4rWb6L+Q=
+    key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Configurazione OTA per aggiornamenti firmware
 ota:
   - platform: esphome
-    password: !secret ota_pwd
+    password: !secret otaxxxxxxx
 
 # Configurazione Wi-Fi
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  ssid: !secret wifixxxxxxxxx
+  password: !secret wifixxxxxxxx
   manual_ip:
-    static_ip: 192.168.1.119
-    gateway: 192.168.1.254
-    subnet: 255.255.255.0
+    static_ip: xxx.xxx.xxx.xxx
+    gateway: xxx.xxx.xxx.xxx
+    subnet: xxx.xxx.xxx.xxx
   fast_connect: true
 
   # Access Point di fallback
   ap:
-    ssid: "Wave001 Fallback Hotspot"
-    password: !secret ap_pwd
+    ssid: "Wave001 Hotspot"
+    password: !secret apxxxxxxxx
 
   # Modalità di risparmio energetico
   power_save_mode: light  
