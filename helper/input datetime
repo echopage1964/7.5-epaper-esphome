@@ -1,1 +1,9 @@
-
+input_datetime:
+  inizio_sleep_notturno:
+    name: Inizio Sleep Notturno
+    has_date: false
+    has_time: true
+  fine_sleep_notturno:
+    name: Fine Sleep Notturno
+    has_date: false
+    has_time: true
