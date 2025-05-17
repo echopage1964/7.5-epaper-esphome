@@ -27,8 +27,9 @@
 - sensor.yaml: sensori utilizzati per i dati del display
 - script sotto Home Assistant: per le gestione degli input text
 - automazione sotto Home Assitant: per avviare lo script ad ogni mezzanotte 
-- input_text input_date sotto Home assistant: per la gestione degli eventi del calendario
+- input_text input_datetime sotto Home assistant: per la gestione degli eventi del calendario
 - input_datetime sotto Home Assistant: per la gestione dei tempi Deep Sleep
+- input_select sotto Home Assitant:
 
 ## Come usare questo progetto
 1. Carica il file YAML su ESPHome.
