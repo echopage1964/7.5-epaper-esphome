@@ -20,8 +20,8 @@ input_number:
     max: 180
     step: 5
     unit_of_measurement: 'secondi'
-  durata_deep_diurno:
-    name: Durata Deep Diurno
+  durata_sleep_diurno:
+    name: Durata Sleep Diurno
     initial: 20
     min: 10
     max: 60
