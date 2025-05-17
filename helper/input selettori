@@ -6,3 +6,10 @@ input_select:
       - Orario
     initial: Giornaliero
     icon: mdi:weather-sunny
+  scelta_data:
+    name: Scelta data
+    options:
+      - Data numerica
+      - Data alfanumerica
+    initial: Data numerica
+    icon: mdi:calendar
